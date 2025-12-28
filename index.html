@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chat Partner (Free)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .bubble-right {
+            background-color: #8de055;
+            color: black;
+            border-radius: 15px 0px 15px 15px;
+        }
+        .bubble-left {
+            background-color: #ffffff;
+            color: black;
+            border-radius: 0px 15px 15px 15px;
+            border: 1px solid #e5e7eb;
+        }
+        body { background-color: #7289da; }
+    </style>
+</head>
+<body class="h-screen flex flex-col items-center justify-center p-4">
+
+    <div id="settings-modal" class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md mb-4 absolute z-50">
+        <h2 class="text-xl font-bold mb-2 text-gray-800">設定（無料版）</h2>
+        <p class="text-xs text-gray-500 mb-4">Google AI Studioで取得したGemini APIキーを入力してください。</p>
+        
+        <label class="block text-sm font-bold mb-1">Gemini API Key</label>
+        <input type="password" id="api-key" placeholder="AIzaSy..." class="w-full p-2 border rounded mb-4 text-gray-700">
+
+        <label class="block text-sm font-bold mb-1">人格プロンプト (LINE分析結果)</label>
+        <textarea id="system-prompt" rows="6" class="w-full p-2 border rounded mb-4 text-gray-700 text-sm" placeholder="例：あなたは〇〇です。口調は..."></textarea>
+
+        <button onclick="startChat()" class="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700">会話を始める</button>
+    </div>
+
+    <div id="chat-container" class="w-full max-w-md bg-[#7289da] flex flex-col h-full hidden">
+        <div class="bg-opacity-90 bg-slate-800 text-white p-4 text-center font-bold shadow-md">
+            AI Partner (Gemini)
+        </div>
+
+        <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-4"></div>
+
+        <div class="bg-white p-3 flex gap-2 items-center">
+            <input type="text" id="user-input" class="flex-1 border p-2 rounded-full focus:outline-none focus:border-blue-500" placeholder="メッセージを入力...">
+            <button onclick="sendMessage()" class="bg-blue-500 text-white px-4 py-2 rounded-full font-bold">送信</button>
+        </div>
+    </div>
+
+    <script>
+        let apiKey = "";
+        let systemPrompt = "";
+        let chatHistory = []; // Gemini用の履歴保持配列
+
+        function startChat() {
+            apiKey = document.getElementById('api-key').value;
+            systemPrompt = document.getElementById('system-prompt').value;
+
+            if (!apiKey) {
+                alert("APIキーを入力してください");
+                return;
+            }
+
+            document.getElementById('settings-modal').classList.add('hidden');
+            document.getElementById('chat-container').classList.remove('hidden');
+        }
+
+        async function sendMessage() {
+            const inputField = document.getElementById('user-input');
+            const message = inputField.value;
+            if (!message) return;
+
+            // UIに表示
+            addMessageToUI(message, 'user');
+            inputField.value = '';
+
+            // ローディング表示
+            const loadingId = addMessageToUI("...", 'ai');
+
+            // Gemini API用の履歴データ構築
+            // role: "user" と "model" を交互に並べる必要があります
+            const contents = chatHistory.map(msg => ({
+                role: msg.role,
+                parts: [{ text: msg.content }]
+            }));
+            
+            // 今回のユーザーメッセージを追加
+            contents.push({
+                role: "user",
+                parts: [{ text: message }]
+            });
+
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        system_instruction: {
+                            parts: { text: systemPrompt }
+                        },
+                        contents: contents
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error.message);
+                }
+
+                // AIの回答を取得
+                const aiText = data.candidates[0].content.parts[0].text;
+
+                // UI更新
+                document.getElementById(loadingId).innerText = aiText;
+
+                // 履歴に追加
+                chatHistory.push({ role: "user", content: message });
+                chatHistory.push({ role: "model", content: aiText });
+
+            } catch (error) {
+                document.getElementById(loadingId).innerText = "エラー: " + error.message;
+            }
+        }
+
+        function addMessageToUI(text, sender) {
+            const messagesDiv = document.getElementById('messages');
+            const msgDiv = document.createElement('div');
+            const bubble = document.createElement('div');
+            const msgId = 'msg-' + Date.now();
+            
+            msgDiv.className = `flex w-full ${sender === 'user' ? 'justify-end' : 'justify-start'}`;
+            bubble.className = `p-3 max-w-[80%] text-sm shadow-sm ${sender === 'user' ? 'bubble-right' : 'bubble-left'}`;
+            bubble.innerText = text;
+            bubble.id = msgId;
+
+            msgDiv.appendChild(bubble);
+            messagesDiv.appendChild(msgDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            return msgId;
+        }
+
+        document.getElementById('user-input').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') sendMessage();
+        });
+    </script>
+</body>
+</html>
